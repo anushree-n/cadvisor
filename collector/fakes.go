@@ -31,3 +31,7 @@ func (fkm *FakeCollectorManager) Collect() (time.Time, []v2.Metric, error) {
 	var zero time.Time
 	return zero, []v2.Metric{}, nil
 }
+
+func (fkm *FakeCollectorManager) RegisterAllCollectors(fileLocation string) error {
+	return nil
+}
