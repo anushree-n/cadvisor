@@ -30,4 +30,13 @@ func TestCollect(t *testing.T) {
 	err = SetCollectorConfig(collector, "config/sample_config.json")
 	assert.Equal(collector.configFile.Endpoint, "host:port/nginx_status")
 	assert.Equal(collector.configFile.MetricsConfig[0].Name, "activeConnections")
+
+	_, metrics, errMetric := collector.Collect()
+	assert.NoError(errMetric)
+	assert.Equal(metrics[0].Name,"activeConnections")
+        assert.Equal(metrics[1].Name, "reading")
+        assert.Equal(metrics[2].Name, "writing")
+        assert.Equal(metrics[3].Name, "waiting")
+        assert.Equal( metrics[0].IntPoints[0].Value, (metrics[1].IntPoints[0].Value)+(metrics[2].IntPoints[0].Value)+(metrics[3].IntPoints[0].Value) )
+
 }
