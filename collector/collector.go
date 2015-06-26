@@ -22,18 +22,12 @@ import (
 	"github.com/google/cadvisor/info/v2"
 )
 
-type Collector struct {
+type GenericCollector struct {
 	//name of the collector
 	name string
 
 	//holds information extracted from the config file for a collector
 	configFile Config
-
-	//time at which metrics need to be collected next
-	nextCollectionTime time.Time
-
-	//error (if any) during metrics collection
-	err error
 }
 
 type Config struct {
@@ -41,11 +35,11 @@ type Config struct {
 	Endpoint string `json:"endpoint"`
 
 	//holds information about different metrics that can be collected
-	MetricsConfig []metricConfig `json:"metricsConfig"`
+	MetricsConfig []MetricConfig `json:"metricsConfig"`
 }
 
 // metricConfig holds information extracted from the config file about a metric
-type metricConfig struct {
+type MetricConfig struct {
 	//the name of the metric
 	Name string `json:"name"`
 
@@ -56,7 +50,7 @@ type metricConfig struct {
 	Units string `json:"units"`
 
 	//the frequency at which the metric should be collected (in seconds)
-	PollingFrequency string `json:"pollingFrequency"`
+	PollingFrequency time.Duration `json:"pollingFrequency"`
 
 	//the regular expression that can be used to extract the metric
 	Regex string `json:"regex"`
@@ -71,7 +65,7 @@ const (
 )
 
 //Returns a new collector using the information extracted from the configfile
-func NewCollector(collectorName string, configfile string) (*Collector, error) {
+func NewCollector(collectorName string, configfile string) (*GenericCollector, error) {
 	configFile, err := ioutil.ReadFile(configfile)
 	if err != nil {
 		return nil, err
@@ -83,18 +77,18 @@ func NewCollector(collectorName string, configfile string) (*Collector, error) {
 		return nil, err
 	}
 
-	return &Collector{
-		name: collectorName, configFile: configInJSON, nextCollectionTime: time.Now(), err: nil,
+	return &GenericCollector{
+		name: collectorName, configFile: configInJSON,
 	}, nil
 }
 
 //Returns name of the collector
-func (collector *Collector) Name() string {
+func (collector *GenericCollector) Name() string {
 	return collector.name
 }
 
 //Returns the next collection time and collected metrics for the collector; Returns the next collection time and an error message in case of any error during metrics collection
-func (collector *Collector) Collect() (time.Time, []v2.Metric, error) {
+func (collector *GenericCollector) Collect() (time.Time, []v2.Metric, error) {
 	//TO BE IMPLEMENTED
 	return time.Now(), nil, nil
 }

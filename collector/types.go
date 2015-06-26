@@ -22,7 +22,7 @@ import (
 // TODO(vmarmol): Export to a custom metrics type when that is available.
 
 // Metric collector.
-type CollectorInterface interface {
+type Collector interface {
 	// Collect metrics from this collector.
 	// Returns the next time this collector should be collected from.
 	// Next collection time is always returned, even when an error occurs.

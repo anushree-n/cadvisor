@@ -27,6 +27,6 @@ func TestConfig(t *testing.T) {
 	collector, err := NewCollector("nginx", "config/sample_config.json")
 	assert.NoError(err)
 	assert.Equal(collector.name, "nginx")
-	assert.Equal(collector.configFile.Endpoint, "host:port/nginx_status")
+	assert.Equal(collector.configFile.Endpoint, "http://localhost:8000/nginx_status")
 	assert.Equal(collector.configFile.MetricsConfig[0].Name, "activeConnections")
 }
