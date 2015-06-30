@@ -16,7 +16,12 @@ package collector
 
 import (
 	"encoding/json"
+	"errors"
 	"io/ioutil"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/cadvisor/info/v2"
@@ -89,6 +94,65 @@ func (collector *GenericCollector) Name() string {
 
 //Returns the next collection time and collected metrics for the collector; Returns the next collection time and an error message in case of any error during metrics collection
 func (collector *GenericCollector) Collect() (time.Time, []v2.Metric, error) {
-	//TO BE IMPLEMENTED
-	return time.Now(), nil, nil
+	minNextColTime := collector.configFile.MetricsConfig[0].PollingFrequency
+
+	for _, metricConfig := range collector.configFile.MetricsConfig {
+		if metricConfig.PollingFrequency < minNextColTime {
+			minNextColTime = metricConfig.PollingFrequency
+		}
+	}
+	currentTime := time.Now()
+	nextCollectionTime := currentTime.Add(time.Duration(minNextColTime * time.Second))
+
+	uri := collector.configFile.Endpoint
+	response, err := http.Get(uri)
+	if err != nil {
+		return nextCollectionTime, nil, err
+	}
+
+	pageContent, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nextCollectionTime, nil, err
+	}
+
+	lines := strings.Split(string(pageContent), "\n")
+
+	var metricType v2.MetricType
+	metrics := make([]v2.Metric, len(collector.configFile.MetricsConfig))
+
+	for ind, metricConfig := range collector.configFile.MetricsConfig {
+		metricValue := make([]v2.IntPoint, 1)
+		regex, err := regexp.Compile(metricConfig.Regex)
+		if err != nil {
+			return nextCollectionTime, nil, err
+		}
+
+		var matchString []string
+		for _, line := range lines {
+			matchString = regex.FindStringSubmatch(line)
+			if matchString != nil {
+				regVal, _ := strconv.ParseInt(strings.Trim(matchString[1], " "), 10, 64)
+				metricValue[0].Value = regVal
+				metricValue[0].Timestamp = currentTime
+				break
+			}
+		}
+
+		if matchString == nil {
+			return nextCollectionTime, nil, errors.New("No match found for metric regexp: " + metricConfig.Regex)
+		}
+
+		metrics[ind].Name = metricConfig.Name
+		if metricConfig.MetricType == "gauge" {
+			metricType = v2.MetricGauge
+		} else if metricConfig.MetricType == "counter" {
+			metricType = v2.MetricCumulative
+		}
+		metrics[ind].Type = metricType
+		metrics[ind].IntPoints = metricValue
+		metrics[ind].Labels = nil
+		metrics[ind].FloatPoints = nil
+	}
+
+	return nextCollectionTime, metrics, nil
 }

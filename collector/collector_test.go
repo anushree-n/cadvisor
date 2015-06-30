@@ -17,6 +17,7 @@ package collector
 import (
 	"testing"
 
+	"github.com/google/cadvisor/info/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,4 +30,14 @@ func TestConfig(t *testing.T) {
 	assert.Equal(collector.name, "nginx")
 	assert.Equal(collector.configFile.Endpoint, "http://localhost:8000/nginx_status")
 	assert.Equal(collector.configFile.MetricsConfig[0].Name, "activeConnections")
+
+	//Collect nginx metrics
+	_, metrics, errMetric := collector.Collect()
+	assert.NoError(errMetric)
+	assert.Equal(metrics[0].Name, "activeConnections")
+	assert.Equal(metrics[0].Type, v2.MetricGauge)
+	assert.Equal(metrics[1].Name, "reading")
+	assert.Equal(metrics[2].Name, "writing")
+	assert.Equal(metrics[3].Name, "waiting")
+	assert.Equal(metrics[0].IntPoints[0].Value, (metrics[1].IntPoints[0].Value)+(metrics[2].IntPoints[0].Value)+(metrics[3].IntPoints[0].Value))
 }
