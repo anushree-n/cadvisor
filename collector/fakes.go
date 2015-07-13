@@ -27,7 +27,7 @@ func (fkm *FakeCollectorManager) RegisterCollector(collector Collector) error {
 	return nil
 }
 
-func (fkm *FakeCollectorManager) Collect() (time.Time, []v2.Metric, error) {
+func (fkm *FakeCollectorManager) Collect() (time.Time, *v2.ContainerMetrics, error) {
 	var zero time.Time
-	return zero, []v2.Metric{}, nil
+	return zero, &v2.ContainerMetrics{}, nil
 }

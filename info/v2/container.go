@@ -194,3 +194,8 @@ type NetworkStats struct {
 	// Network stats by interface.
 	Interfaces []v1.InterfaceStats `json:"interfaces,omitempty"`
 }
+
+type ContainerMetrics struct {
+	Timestamp time.Time
+	Metrics   []Metric
+}

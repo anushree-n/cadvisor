@@ -48,12 +48,15 @@ func (cm *collectorManager) RegisterCollector(collector Collector) error {
 	return nil
 }
 
-func (cm *collectorManager) Collect() (time.Time, []v2.Metric, error) {
+func (cm *collectorManager) Collect() (time.Time, *v2.ContainerMetrics, error) {
 	var errors []error
 
 	// Collect from all collectors that are ready.
 	var next time.Time
 	var metrics []v2.Metric
+
+	start := time.Now()
+
 	for _, c := range cm.collectors {
 		if c.nextCollectionTime.Before(time.Now()) {
 			nextCollection, newMetrics, err := c.collector.Collect()
@@ -70,7 +73,10 @@ func (cm *collectorManager) Collect() (time.Time, []v2.Metric, error) {
 		}
 	}
 
-	return next, metrics, compileErrors(errors)
+	return next, &v2.ContainerMetrics{
+		Timestamp: start,
+		Metrics:   metrics,
+	}, compileErrors(errors)
 }
 
 // Make an error slice into a single error.
