@@ -1,0 +1,8 @@
+{
+        "source" : "http://anushreen.mtv.corp.google.com:8080/metrics",
+	"polling_frequency"  : 10, 
+        "metrics_config"  : [
+			{ "name" : "container_cpu_system_seconds_total"},
+                 	{ "name" : "container_cpu_usage_seconds_total"}
+        ]
+}

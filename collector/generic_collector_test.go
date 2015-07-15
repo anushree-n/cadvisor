@@ -31,13 +31,13 @@ func TestEmptyConfig(t *testing.T) {
 
 	emptyConfig := `
         {
-                "endpoint" : "http://localhost:8000/nginx_status",
+                "source : "http://localhost:8000/nginx_status",
                 "metrics_config"  : [
                 ]
         }
         `
 
-	//Create a temporary config file 'temp.json' with invalid json format
+	//Create a temporary config file 'temp.json' with no metrics
 	assert.NoError(ioutil.WriteFile("temp.json", []byte(emptyConfig), 0777))
 
 	_, err := NewCollector("tempCollector", "temp.json")
@@ -52,7 +52,7 @@ func TestConfigWithErrors(t *testing.T) {
 	//Syntax error: Missed '"' after activeConnections
 	invalid := `
 	{
-		"endpoint" : "http://localhost:8000/nginx_status",
+		"source" : "http://localhost:8000/nginx_status",
 		"metrics_config"  : [
 			{
 				 "name" : "activeConnections,  
@@ -80,7 +80,7 @@ func TestConfigWithRegexErrors(t *testing.T) {
 	//Error: Missed operand for '+' in activeConnections regex
 	invalid := `
         {
-                "endpoint" : "host:port/nginx_status",
+                "source" : "host:port/nginx_status",
                 "metrics_config"  : [
                         {
                                  "name" : "activeConnections",
@@ -109,22 +109,23 @@ func TestConfigWithRegexErrors(t *testing.T) {
 	assert.NoError(os.Remove("temp.json"))
 }
 
-func TestConfig(t *testing.T) {
+func TestConfigREST(t *testing.T) {
 	assert := assert.New(t)
 
 	//Create an nginx collector using the config file 'sample_config.json'
-	collector, err := NewCollector("nginx", "config/sample_config.json")
+	collector, err := NewCollector("REST", "config/sample_config.json")
 	assert.NoError(err)
-	assert.Equal(collector.name, "nginx")
-	assert.Equal(collector.configFile.Endpoint, "http://localhost:8000/nginx_status")
-	assert.Equal(collector.configFile.MetricsConfig[0].Name, "activeConnections")
+	assert.Equal(collector.name, "REST")
+	config := collector.configFile.makeREST()
+	assert.Equal(config.Source, "http://localhost:8000/nginx_status")
+	assert.Equal(config.MetricsConfig[0].Name, "activeConnections")
 }
 
-func TestMetricCollection(t *testing.T) {
+func TestMetricCollectionREST(t *testing.T) {
 	assert := assert.New(t)
 
 	//Collect nginx metrics from a fake nginx endpoint
-	fakeCollector, err := NewCollector("nginx", "config/sample_config.json")
+	fakeCollector, err := NewCollector("REST", "config/sample_config.json")
 	assert.NoError(err)
 
 	tempServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +133,9 @@ func TestMetricCollection(t *testing.T) {
 		fmt.Fprintln(w, "5 5 32\nReading: 0 Writing: 1 Waiting: 2")
 	}))
 	defer tempServer.Close()
-	fakeCollector.configFile.Endpoint = tempServer.URL
+	config := fakeCollector.configFile.makeREST()
+	config.Source = tempServer.URL
+	fakeCollector.configFile = Config{config}
 
 	_, metrics, errMetric := fakeCollector.Collect()
 	assert.NoError(errMetric)
@@ -142,7 +145,25 @@ func TestMetricCollection(t *testing.T) {
 	assert.Equal(metrics[1].Name, "reading")
 	assert.Equal(metrics[2].Name, "writing")
 	assert.Equal(metrics[3].Name, "waiting")
-
 	//Assert: Number of active connections = Number of connections reading + Number of connections writing + Number of connections waiting
 	assert.Equal(metrics[0].IntPoints[0].Value, (metrics[1].IntPoints[0].Value)+(metrics[2].IntPoints[0].Value)+(metrics[3].IntPoints[0].Value))
+}
+
+func TestPrometheus(t *testing.T) {
+	assert := assert.New(t)
+
+	//Create a prometheus collector using the config file 'sample_config_prometheus.json'
+	collector, err := NewCollector("Prometheus", "config/sample_config_prometheus.json")
+	assert.NoError(err)
+	assert.Equal(collector.name, "Prometheus")
+	config := collector.configFile.makePrometheus()
+	assert.Equal(config.Source, "http://anushreen.mtv.corp.google.com:8080/metrics")
+	assert.Equal(config.MetricsConfig[0].Name, "container_cpu_system_seconds_total")
+	assert.Equal(config.MetricsConfig[1].Name, "container_cpu_usage_seconds_total")
+
+	_, metrics, errMetric := collector.Collect()
+	assert.NoError(errMetric)
+	assert.Equal(metrics[0].Name, "container_cpu_system_seconds_total")
+	assert.Equal(metrics[1].Name, "container_cpu_usage_seconds_total")
+	assert.Equal(metrics[0].Type, v1.MetricGauge)
 }
