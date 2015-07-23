@@ -39,57 +39,73 @@ type GenericCollector struct {
 }
 
 type collectorInfo struct {
-	//minimum polling frequency among all metrics
-	minPollingFrequency time.Duration
-
 	//regular expresssions for all metrics
 	regexps []*regexp.Regexp
 }
 
 //Returns a new collector using the information extracted from the configfile
 func NewCollector(collectorName string, configFile []byte) (*GenericCollector, error) {
-	var configInJSON Config
-	err := json.Unmarshal(configFile, &configInJSON)
-	if err != nil {
-		return nil, err
-	}
+	switch collectorName {
+	case "Prometheus":
+		var configInJSON Prometheus
+		err := json.Unmarshal(configFile, &configInJSON)
+		if err != nil {
+			return nil, err
+		}
 
-	//TODO : Add checks for validity of config file (eg : Accurate JSON fields)
+		//TODO : Add checks for validity of config file (eg : Accurate JSON fields)
 
-	if len(configInJSON.MetricsConfig) == 0 {
-		return nil, fmt.Errorf("No metrics provided in config")
-	}
+		if len(configInJSON.MetricsConfig) == 0 {
+			return nil, fmt.Errorf("No metrics provided in config")
+		}
 
-	minPollFrequency := time.Duration(0)
-	regexprs := make([]*regexp.Regexp, len(configInJSON.MetricsConfig))
-
-	for ind, metricConfig := range configInJSON.MetricsConfig {
-		// Find the minimum specified polling frequency in metric config.
-		if metricConfig.PollingFrequency != 0 {
-			if minPollFrequency == 0 || metricConfig.PollingFrequency < minPollFrequency {
-				minPollFrequency = metricConfig.PollingFrequency
+		regexprs := make([]*regexp.Regexp, len(configInJSON.MetricsConfig))
+		for ind, metricConfig := range configInJSON.MetricsConfig {
+			regexprs[ind], err = regexp.Compile(metricConfig.Name + ".*([0-9]+ | [0-9]+.[0-9]+)")
+			if err != nil {
+				return nil, fmt.Errorf("Invalid metric name %v", metricConfig.Name)
 			}
 		}
 
-		regexprs[ind], err = regexp.Compile(metricConfig.Regex)
+		return &GenericCollector{
+			name:       collectorName,
+			configFile: Config{configInJSON},
+			info: &collectorInfo{
+				regexps: regexprs},
+		}, nil
+
+	case "REST":
+		var configInJSON REST
+		err := json.Unmarshal(configFile, &configInJSON)
 		if err != nil {
-			return nil, fmt.Errorf("Invalid regexp %v for metric %v", metricConfig.Regex, metricConfig.Name)
+			return nil, err
 		}
-	}
 
-	// Minimum supported polling frequency is 1s.
-	minSupportedFrequency := 1 * time.Second
-	if minPollFrequency < minSupportedFrequency {
-		minPollFrequency = minSupportedFrequency
-	}
+		//TODO : Add checks for validity of config file (eg : Accurate JSON fields)
 
-	return &GenericCollector{
-		name:       collectorName,
-		configFile: configInJSON,
-		info: &collectorInfo{
-			minPollingFrequency: minPollFrequency,
-			regexps:             regexprs},
-	}, nil
+		if len(configInJSON.MetricsConfig) == 0 {
+			return nil, fmt.Errorf("No metrics provided in config")
+		}
+
+		regexprs := make([]*regexp.Regexp, len(configInJSON.MetricsConfig))
+		for ind, metricConfig := range configInJSON.MetricsConfig {
+			regexprs[ind], err = regexp.Compile(metricConfig.Regex)
+			if err != nil {
+				return nil, fmt.Errorf("Invalid metric name %v", metricConfig.Name)
+			}
+		}
+
+		return &GenericCollector{
+			name:       collectorName,
+			configFile: Config{configInJSON},
+			info: &collectorInfo{
+				regexps: regexprs},
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("No support for %v", collectorName)
+
+	}
 }
 
 //Returns name of the collector
@@ -97,31 +113,90 @@ func (collector *GenericCollector) Name() string {
 	return collector.name
 }
 
-//Returns collected metrics and the next collection time of the collector
-func (collector *GenericCollector) Collect() (time.Time, []v1.Metric, error) {
-	currentTime := time.Now()
-	nextCollectionTime := currentTime.Add(time.Duration(collector.info.minPollingFrequency * time.Second))
-
-	uri := collector.configFile.Endpoint
+func readSource(uri string) (string, error) {
 	response, err := http.Get(uri)
 	if err != nil {
-		return nextCollectionTime, nil, err
+		return "", err
 	}
-
 	defer response.Body.Close()
 
 	pageContent, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		return nextCollectionTime, nil, err
+		return "", err
 	}
+	return string(pageContent), nil
+}
 
-	metrics := make([]v1.Metric, len(collector.configFile.MetricsConfig))
-	var errorSlice []error
+//Returns collected metrics and the next collection time of the collector
+func (collector *GenericCollector) Collect() (time.Time, []v1.Metric, error) {
+	switch collector.name {
+	case "REST":
+		config := collector.configFile.MakeREST()
 
-	for ind, metricConfig := range collector.configFile.MetricsConfig {
-		matchString := collector.info.regexps[ind].FindStringSubmatch(string(pageContent))
-		if matchString != nil {
-			if metricConfig.Units == "float" {
+		currentTime := time.Now()
+		nextCollectionTime := currentTime.Add(time.Duration(config.PollingFrequency * time.Second))
+
+		uri := config.Source
+		pageContent, err := readSource(uri)
+		if err != nil {
+			return nextCollectionTime, nil, err
+		}
+
+		metrics := make([]v1.Metric, len(config.MetricsConfig))
+		var errorSlice []error
+
+		for ind, metricConfig := range config.MetricsConfig {
+			matchString := collector.info.regexps[ind].FindStringSubmatch(pageContent)
+			if matchString != nil {
+				if metricConfig.Units == "float" {
+					regVal, err := strconv.ParseFloat(strings.TrimSpace(matchString[1]), 64)
+					if err != nil {
+						errorSlice = append(errorSlice, err)
+					}
+					metrics[ind].FloatPoints = []v1.FloatPoint{
+						{Value: regVal, Timestamp: currentTime},
+					}
+				} else if metricConfig.Units == "integer" || metricConfig.Units == "int" {
+					regVal, err := strconv.ParseInt(strings.TrimSpace(matchString[1]), 10, 64)
+					if err != nil {
+						errorSlice = append(errorSlice, err)
+					}
+					metrics[ind].IntPoints = []v1.IntPoint{
+						{Value: regVal, Timestamp: currentTime},
+					}
+				} else {
+					errorSlice = append(errorSlice, fmt.Errorf("Unexpected value of 'units' for metric '%v' in config ", metricConfig.Name))
+				}
+			} else {
+				errorSlice = append(errorSlice, fmt.Errorf("No match found for regexp: %v for metric '%v' in config", metricConfig.Regex, metricConfig.Name))
+			}
+
+			metrics[ind].Name = metricConfig.Name
+			if metricConfig.MetricType == "gauge" {
+				metrics[ind].Type = v1.MetricGauge
+			} else if metricConfig.MetricType == "counter" {
+				metrics[ind].Type = v1.MetricCumulative
+			}
+		}
+
+		return nextCollectionTime, metrics, compileErrors(errorSlice)
+
+	case "Prometheus":
+		config := collector.configFile.MakePrometheus()
+
+		currentTime := time.Now()
+		nextCollectionTime := currentTime.Add(time.Duration(config.PollingFrequency * time.Second))
+
+		uri := config.Source
+		pageContent, err := readSource(uri)
+		if err != nil {
+			return nextCollectionTime, nil, err
+		}
+		metrics := make([]v1.Metric, len(config.MetricsConfig))
+		var errorSlice []error
+		for ind, metricConfig := range config.MetricsConfig {
+			matchString := collector.info.regexps[ind].FindStringSubmatch(pageContent)
+			if matchString != nil {
 				regVal, err := strconv.ParseFloat(strings.TrimSpace(matchString[1]), 64)
 				if err != nil {
 					errorSlice = append(errorSlice, err)
@@ -129,29 +204,16 @@ func (collector *GenericCollector) Collect() (time.Time, []v1.Metric, error) {
 				metrics[ind].FloatPoints = []v1.FloatPoint{
 					{Value: regVal, Timestamp: currentTime},
 				}
-			} else if metricConfig.Units == "integer" || metricConfig.Units == "int" {
-				regVal, err := strconv.ParseInt(strings.TrimSpace(matchString[1]), 10, 64)
-				if err != nil {
-					errorSlice = append(errorSlice, err)
-				}
-				metrics[ind].IntPoints = []v1.IntPoint{
-					{Value: regVal, Timestamp: currentTime},
-				}
-
 			} else {
-				errorSlice = append(errorSlice, fmt.Errorf("Unexpected value of 'units' for metric '%v' in config ", metricConfig.Name))
+				errorSlice = append(errorSlice, fmt.Errorf("No match found for metric '%v' in config", metricConfig.Name))
 			}
-		} else {
-			errorSlice = append(errorSlice, fmt.Errorf("No match found for regexp: %v for metric '%v' in config", metricConfig.Regex, metricConfig.Name))
-		}
-
-		metrics[ind].Name = metricConfig.Name
-		if metricConfig.MetricType == "gauge" {
+			metrics[ind].Name = metricConfig.Name
 			metrics[ind].Type = v1.MetricGauge
-		} else if metricConfig.MetricType == "counter" {
-			metrics[ind].Type = v1.MetricCumulative
 		}
-	}
 
-	return nextCollectionTime, metrics, compileErrors(errorSlice)
+		return nextCollectionTime, metrics, compileErrors(errorSlice)
+
+	default:
+		return time.Now(), nil, fmt.Errorf("No support for %v", collector.Name)
+	}
 }

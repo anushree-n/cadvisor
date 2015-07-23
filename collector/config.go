@@ -18,16 +18,44 @@ import (
 	"time"
 )
 
+type ConfigSlice []Config
+
 type Config struct {
-	//the endpoint to hit to scrape metrics
-	Endpoint string `json:"endpoint"`
+	DataSource interface{}
+}
+
+type Prometheus struct {
+	//source of the metrics
+	Source string `json:"source"`
+
+	//the frequency at which metrics should be collected
+	PollingFrequency time.Duration
 
 	//holds information about different metrics that can be collected
-	MetricsConfig []MetricConfig `json:"metrics_config"`
+	MetricsConfig []PrometheusMetricConfig `json:"metrics_config"`
+}
+
+type PrometheusMetricConfig struct {
+	//the name of the metric
+	Name string `json:"name"`
+
+	//TODO
+	//Labels
+}
+
+type REST struct {
+	//source of the metrics
+	Source string `json:"source"`
+
+	//the frequency at which metrics should be collected
+	PollingFrequency time.Duration
+
+	//holds information about different metrics that can be collected
+	MetricsConfig []RESTMetricConfig `json:"metrics_config"`
 }
 
 // metricConfig holds information extracted from the config file about a metric
-type MetricConfig struct {
+type RESTMetricConfig struct {
 	//the name of the metric
 	Name string `json:"name"`
 
@@ -37,8 +65,7 @@ type MetricConfig struct {
 	//data type of the metric (eg: integer, string)
 	Units string `json:"units"`
 
-	//the frequency at which the metric should be collected
-	PollingFrequency time.Duration `json:"polling_frequency"`
+	//PollingFrequency time.Duration `json:"polling_frequency"`
 
 	//the regular expression that can be used to extract the metric
 	Regex string `json:"regex"`
@@ -51,3 +78,21 @@ const (
 	Counter MetricType = "counter"
 	Gauge   MetricType = "gauge"
 )
+
+func (config Config) IsREST() bool {
+	_, ok := config.DataSource.(REST)
+	return ok
+}
+
+func (config Config) IsPrometheus() bool {
+	_, ok := config.DataSource.(Prometheus)
+	return ok
+}
+
+func (config Config) MakeREST() REST {
+	return config.DataSource.(REST)
+}
+
+func (config Config) MakePrometheus() Prometheus {
+	return config.DataSource.(Prometheus)
+}
