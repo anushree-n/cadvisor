@@ -751,19 +751,22 @@ function drawCustomMetrics(elementId, containerInfo, metricsInfo) {
 
 			var titles = ["Time", metricName];
 			var data = [];
-			metricVal = container[metricName];
-			for (var index in metricVal) {
-                                metric = metricVal[index];
-                                var elements = [];
-                                for (var attribute in metric) {
-                                        value = metric[attribute];
-                                        elements.push(value);
-                                }
-                                if (elements.length<2) {
-                                        elements.push(0);
-                                }
-                                data.push(elements);
-                        }
+			metricLabelVal = container[metricName];
+			for (var label in metricLabelVal) {
+				metricVal = metricLabelVal[label];
+				for (var index in metricVal) {
+        	                        metric = metricVal[index];
+                	                var elements = [];
+                        	        for (var attribute in metric) {
+                                	        value = metric[attribute];
+                                        	elements.push(value);
+                                	}
+                    	       		if (elements.length<2) {
+                        	                elements.push(0);
+                                	}
+                                	data.push(elements);
+                        	}
+			}
                        drawLineChart(titles, data, elementId+"-"+metricName, metricUnits);			
 		}
 	}
