@@ -16,13 +16,12 @@ package collector
 
 import (
 	"encoding/json"
+	"github.com/google/cadvisor/info/v1"
 	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-	//	"github.com/golang/glog"
-	"github.com/google/cadvisor/info/v1"
 )
 
 type PrometheusCollector struct {
@@ -56,7 +55,7 @@ func (collector *PrometheusCollector) Name() string {
 func getMetricData(line string) string {
 	fields := strings.Fields(line)
 	data := fields[3]
-	if len(fields) > 3 {
+	if len(fields) > 4 {
 		for i, _ := range fields {
 			if i > 3 {
 				data = data + "_" + fields[i]
@@ -72,6 +71,7 @@ func (collector *PrometheusCollector) GetSpec() []v1.MetricSpec {
 	if err != nil {
 		return specs
 	}
+	defer response.Body.Close()
 
 	pageContent, err := ioutil.ReadAll(response.Body)
 	if err != nil {
@@ -79,32 +79,25 @@ func (collector *PrometheusCollector) GetSpec() []v1.MetricSpec {
 	}
 
 	lines := strings.Split(string(pageContent), "\n")
-	//if allMetrics {
 	for i, line := range lines {
-		line = strings.TrimSpace(line)
+		//line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "# HELP") {
-			metUnit := getMetricData(lines[i])
-			metType := getMetricData(lines[i+1])
+			//metUnit := getMetricData(lines[i])
+			//metType := getMetricData(lines[i+1])
 			stopIndex := strings.Index(lines[i+2], "{")
 			if stopIndex == -1 {
 				stopIndex = strings.Index(lines[i+2], " ")
 			}
-			metName := strings.TrimSpace(lines[i+2][0:stopIndex])
-			//	fmt.Println("Name :  ", metName)
-			//	fmt.Println("Type :  ", metType)
-			//	fmt.Println("Units:  ", metUnit)
-			//	fmt.Println()
+			//metName := strings.TrimSpace(lines[i+2][0:stopIndex])
 			spec := v1.MetricSpec{
-				Name:   metName,
-				Type:   v1.MetricType(metType),
+				Name:   strings.TrimSpace(lines[i+2][0:stopIndex]),
+				Type:   v1.MetricType(getMetricData(lines[i+1])),
 				Format: "float",
-				Units:  metUnit,
+				Units:  getMetricData(lines[i]),
 			}
 			specs = append(specs, spec)
 		}
 	}
-	//	}
-	response.Body.Close()
 	return specs
 }
 
@@ -118,8 +111,7 @@ func (collector *PrometheusCollector) Collect(metrics map[string][]v1.MetricVal)
 	if err != nil {
 		return nextCollectionTime, nil, err
 	}
-
-	//defer response.Body.Close()
+	defer response.Body.Close()
 
 	pageContent, err := ioutil.ReadAll(response.Body)
 	if err != nil {
@@ -132,26 +124,26 @@ func (collector *PrometheusCollector) Collect(metrics map[string][]v1.MetricVal)
 		if line == "" {
 			break
 		}
-		line = strings.TrimSpace(line)
+		//line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "# HELP") && !strings.HasPrefix(line, "# TYPE") {
+			var metLabel string
 			startLabelIndex := strings.Index(line, "{")
 			spaceIndex := strings.Index(line, " ")
 			if startLabelIndex == -1 {
 				startLabelIndex = spaceIndex
 			}
+
 			metName := strings.TrimSpace(line[0:startLabelIndex])
-			var metLabel string
+
 			if startLabelIndex+1 <= spaceIndex-1 {
 				metLabel = strings.TrimSpace(line[startLabelIndex+1 : spaceIndex-1])
 			}
+
 			metVal, err := strconv.ParseFloat(line[spaceIndex+1:], 64)
 			if err != nil {
 				return nextCollectionTime, nil, err
 			}
-			//	fmt.Println("Name :  ", metName)
-			//	fmt.Println("Label:  ", metLabel)
-			//	fmt.Println("Value:  ", metVal)
-			//	fmt.Println()
+
 			metric := v1.MetricVal{
 				Label:      metLabel,
 				FloatValue: metVal,
@@ -160,6 +152,5 @@ func (collector *PrometheusCollector) Collect(metrics map[string][]v1.MetricVal)
 			metrics[metName] = append(metrics[metName], metric)
 		}
 	}
-	response.Body.Close()
 	return nextCollectionTime, metrics, nil
 }

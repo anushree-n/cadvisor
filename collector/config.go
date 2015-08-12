@@ -57,13 +57,5 @@ type Prometheus struct {
 	PollingFrequency time.Duration `json:"polling_frequency"`
 
 	//holds information about different metrics that can be collected
-	MetricsConfig []PrometheusMetricConfig `json:"metrics_config"`
-}
-
-type PrometheusMetricConfig struct {
-	//the name of the metric
-	Name string `json:"name"`
-
-	//TODO
-	//Labels
+	MetricsConfig []string `json:"metrics_config"`
 }
